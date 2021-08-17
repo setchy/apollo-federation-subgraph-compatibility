@@ -1,7 +1,5 @@
-import { readFileSync } from "fs";
-import { print, parse } from "graphql";
-import { resolve } from "path";
 import fetch from "make-fetch-happen";
+import * as introspection from "../tests/introspection";
 
 const pingQuery = "query { __typename }";
 
@@ -17,7 +15,7 @@ async function graphqlRequest(
     variables?: { [key: string]: any };
     operationName?: string;
   },
-  headers?: { [key: string]: any }
+  headers?: { [key: string]: string }
 ) {
   const resp = await fetch(url, {
     headers: { "content-type": "application/json", ...(headers ?? {}) },
@@ -78,37 +76,10 @@ export class GraphClient {
   }
 
   async check_service(): Promise<boolean> {
-    try {
-      const productsPing = await graphqlRequest(productsUrl, {
-        query: "query { _service { sdl } }",
-      });
-      const productsRaw = readFileSync(
-        resolve(
-          __dirname,
-          "..",
-          "..",
-          "implementations",
-          "_template_",
-          "products.graphql"
-        ),
-        "utf-8"
-      );
-
-      if (!productsPing.data?._service?.sdl) return false;
-
-      const implementingLibrarySchema = parse(productsPing.data._service.sdl);
-      const productsReferenceSchema = parse(productsRaw);
-
-      const implementingLibraryTest = print(implementingLibrarySchema);
-      const referenceSchema = print(productsReferenceSchema);
-
-      if (implementingLibraryTest == referenceSchema) return true;
-
-      return false;
-    } catch (err) {
-      console.log(err);
-      return false;
-    }
+    return introspection.test({
+      productsClient: (req, headers) =>
+        graphqlRequest(productsUrl, req, headers),
+    });
   }
 
   async check_ftv1(): Promise<boolean> {

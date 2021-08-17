@@ -51,6 +51,7 @@ async function runDockerCompose(libraryName: string, librariesPath: string) {
   }
 
   return async () => {
+    console.log("docker-compose down ...");
     await execa("docker-compose", ["down", "--remove-orphans"]);
   };
 }
