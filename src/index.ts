@@ -3,6 +3,25 @@ import { resolve } from "path";
 import { ping } from "./utils/client";
 import { generateMarkdown } from "./utils/markdown";
 import execa from "execa";
+import debug from "debug";
+import { Writable } from "stream";
+
+const dockerDebug = debug("docker");
+const dockerDebugStream = () =>
+  new Writable({
+    write(chunk, encoding, next) {
+      dockerDebug(chunk.toString());
+      next();
+    },
+  });
+const jestDebug = debug("test");
+const jestDebugStream = () =>
+  new Writable({
+    write(chunk, encoding, next) {
+      jestDebug(chunk.toString());
+      next();
+    },
+  });
 
 function getFolderNamesFromPath(path: string) {
   return readdirSync(path, {
@@ -29,6 +48,7 @@ export class TestResult {
 let results = new Map<string, TestResult>();
 
 async function runDockerCompose(libraryName: string, librariesPath: string) {
+  console.log("Starting containers...");
   const proc = execa("docker-compose", [
     "-f",
     "docker-compose.yaml",
@@ -39,9 +59,8 @@ async function runDockerCompose(libraryName: string, librariesPath: string) {
     "--detach",
   ]);
 
-  proc.stdin.pipe(process.stdin);
-  proc.stdout.pipe(process.stdout);
-  proc.stderr.pipe(process.stderr);
+  proc.stdout.pipe(dockerDebugStream());
+  proc.stderr.pipe(dockerDebugStream());
 
   await proc;
 
@@ -52,7 +71,7 @@ async function runDockerCompose(libraryName: string, librariesPath: string) {
   }
 
   return async () => {
-    console.log("docker-compose down...");
+    console.log("Stopping containers...");
     await execa("docker-compose", ["down", "--remove-orphans"]);
   };
 }
@@ -60,6 +79,9 @@ async function runDockerCompose(libraryName: string, librariesPath: string) {
 async function runJest(libraryName: string): Promise<JestJSONOutput> {
   const jestBin = require.resolve("jest/bin/jest");
   const proc = execa(jestBin, ["src", "--ci", "--json"], { reject: false });
+
+  proc.stdout.pipe(jestDebugStream());
+  proc.stderr.pipe(jestDebugStream());
 
   const { stdout, stderr } = await proc;
 
@@ -70,7 +92,7 @@ async function runJest(libraryName: string): Promise<JestJSONOutput> {
   const results = JSON.parse(stdout) as JestJSONOutput;
 
   if (results.numFailedTests > 0) {
-    writeFileSync(`tmp/${libraryName}-out.txt`, stderr, "utf-8");
+    writeFileSync(`tmp/${libraryName}-testfailures.txt`, stderr, "utf-8");
   }
 
   return results;
@@ -169,4 +191,4 @@ interface JestJSONOutput {
 
   console.log("complete");
   process.exit();
-})();
+})().catch(console.error);
